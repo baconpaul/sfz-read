@@ -25,4 +25,5 @@ int main( int argc, char **argv )
     std::cout << "Parsing contents" << std::endl;
     SFZRead::Document doc;
     doc.parse(contents);
+    std::cout << doc.toString() << std::endl;
 }

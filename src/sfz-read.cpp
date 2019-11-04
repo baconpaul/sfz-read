@@ -1,5 +1,7 @@
 #include "sfz-read.hpp"
 #include <iostream>
+#include <cstdlib>
+#include <sstream> 
 
 #define TAO_PEGTL_NAMESPACE svz_read_pegtl
 
@@ -23,7 +25,8 @@ namespace readParser
     struct kvvalue : sor<seq<kvvalue_digit, star<space>>, kvvalue_string> {};
     struct kvpair : if_must< kvkeyeq, kvvalue > {};
     struct comment : if_must< string<'/', '/'>, until<eolf>> {};
-    struct header_tag : seq< one<'<'>, identifier, one<'>'> > {};
+    struct header_type : identifier {};
+    struct header_tag : seq< one<'<'>, header_type, one<'>'> > {};
     
     struct header : seq<header_tag, star< seq<pad<sor< comment, kvpair >,space> > > > {};
 
@@ -31,8 +34,11 @@ namespace readParser
     struct file : until<eof, anything> {};
 
     // The state
-    struct state
+    struct sfzstate
     {
+        KVPair currentPair;
+        DocumentHeader currentHeader;
+        std::vector<DocumentHeader> headers;
     };
 
     // The action
@@ -42,72 +48,61 @@ namespace readParser
     };
 
     template<>
-    struct action< comment >
+    struct action< header_type >
     {
         template< typename Input >
-        static void apply( const Input& in, state& out )
+        static void apply( const Input& in, sfzstate& out )
             {
-                std::cout << "COMMENT " << in.string() << std::endl;
+                out.currentHeader.typeString = in.string();
             }
     };
 
+    
     template<>
     struct action< header >
     {
         template< typename Input >
-        static void apply( const Input& in, state& out )
+        static void apply( const Input& in, sfzstate& out )
             {
-                std::cout << "HEADER " << in.string() << std::endl;
-            }
-    };
-    
-    template<>
-    struct action< header_tag >
-    {
-        template< typename Input >
-        static void apply( const Input& in, state& out )
-            {
-                //std::cout << "HEADER HEADER" << in.string() << std::endl;
+                out.headers.push_back(out.currentHeader);
+                out.currentHeader = DocumentHeader();
             }
     };
 
+    
+    
     template<>
     struct action< kvpair >
     {
         template< typename Input >
-        static void apply( const Input& in, state& out )
+        static void apply( const Input& in, sfzstate& out )
             {
                 //std::cout << "KVPAIR " << in.string() << std::endl;
+                out.currentHeader.opcodes.push_back(out.currentPair);
+                out.currentPair = KVPair();
             }
     };
+
 
     template<>
-    struct action< kvkeyeq >
+    struct action< kvkey >
     {
         template< typename Input >
-        static void apply( const Input& in, state& out )
+        static void apply( const Input& in, sfzstate& out )
             {
-                //std::cout << "KVKEYEQ " << in.string() << std::endl;
+                out.currentPair.key = in.string();
             }
     };
-
-    template<>
-    struct action< kvvalue >
-    {
-        template< typename Input >
-        static void apply( const Input& in, state& out )
-            {
-                //std::cout << "KVVALUE " << in.string() << std::endl;
-            }
-    };
-
+    
     template<>
     struct action< kvvalue_digit >
     {
         template< typename Input >
-        static void apply( const Input& in, state& out )
+        static void apply( const Input& in, sfzstate& out )
             {
-                std::cout << "KVDIGIT " << in.string() << std::endl;
+                out.currentPair.type = KVPair::Double;
+                out.currentPair.val = in.string();
+                out.currentPair.fval = std::atof(in.string().c_str());
             }
     };
 
@@ -115,9 +110,10 @@ namespace readParser
     struct action< kvvalue_string >
     {
         template< typename Input >
-        static void apply( const Input& in, state& out )
+        static void apply( const Input& in, sfzstate& out )
             {
-                std::cout << "KVSTRING " << in.string() << std::endl;
+                out.currentPair.type = KVPair::String;
+                out.currentPair.val = in.string();
             }
     };
 }
@@ -127,8 +123,36 @@ void Document::parse(std::string &contents)
     rawText = contents;
 
     memory_input<> cmem( contents, "" );
-    readParser::state result;
+    readParser::sfzstate result;
     tao::TAO_PEGTL_NAMESPACE::parse< readParser::file, readParser::action >( cmem, result );
     std::cout << "Parse complete" << std::endl;
+    headers = result.headers;
+}
+
+std::string Document::toString()
+{
+    std::stringstream oss;
+    oss << "SFZ Document\n";
+    for( auto h : headers )
+        oss << h.toString();
+    return oss.str();
+}
+std::string DocumentHeader::toString()
+{
+    std::stringstream oss;
+    oss << "<" << typeString << ">\n";
+    for( auto p : opcodes )
+        oss << "    " << p.toString() << "\n";
+    return oss.str();
+}
+std::string KVPair::toString()
+{
+    std::stringstream oss;
+    oss << key << "=" ;
+    if( type == String )
+        oss << val << " (str)";
+    else
+        oss << fval << " (dbl)";
+    return oss.str();
 }
 }
