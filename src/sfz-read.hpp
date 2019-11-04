@@ -7,10 +7,11 @@
 namespace SFZRead {
     struct KVPair {
         std::string key;
+        // FIXME make this have a double later too
         std::string val;
     };
     
-    struct DocumentSection {
+    struct DocumentHeader {
         typedef enum {
             CONTROL,
             GLOBAL,
@@ -25,7 +26,8 @@ namespace SFZRead {
 
     struct Document {
         std::string rawText;
-        std::vector<DocumentSection> sections;
+        std::vector<DocumentHeader> sections;
+        void parse( std::string &contents );
     };
     
 };
